@@ -5,6 +5,7 @@ const { createEncryptedPin } = require("../../utility/generatepin");
 const cron = require("node-cron");
 const jwt = require("jsonwebtoken");
 const companyController = require("../company/companyController");
+const walletLog = require("./walletLogModel");
 require("dotenv").config();
 
 const JOINING_FEE = Number(process.env.JOINING_FEE) || 2000;
@@ -27,7 +28,9 @@ async function propagateCommission(userId, amount) {
 }
 
 async function checkCycleCompletion(userId) {
-  const user = await User.findById(userId).populate("leftChild").populate("rightChild");
+  const user = await User.findById(userId)
+    .populate("leftChild")
+    .populate("rightChild");
   if (!user) return;
 
   const left = user.leftChild ? await User.findById(user.leftChild) : null;
@@ -43,7 +46,8 @@ async function checkCycleCompletion(userId) {
   if (right.leftChild) rightCount++;
   if (right.rightChild) rightCount++;
 
-  const isCycleComplete = (leftCount >= 2 && rightCount >= 1) || (rightCount >= 2 && leftCount >= 1);
+  const isCycleComplete =
+    (leftCount >= 2 && rightCount >= 1) || (rightCount >= 2 && leftCount >= 1);
 
   if (isCycleComplete && !user.cycleCompletedFlag) {
     const commission = 600;
@@ -99,7 +103,10 @@ async function autoDeductJoiningFee(user) {
     await handlePayment(user._id, JOINING_FEE);
     user.joiningFeePaid = true;
     await user.save();
-    await companyController.addJoiningFee(`${user.name} (${user._id})`, JOINING_FEE);
+    await companyController.addJoiningFee(
+      `${user.name} (${user._id})`,
+      JOINING_FEE
+    );
     return true;
   }
   return false;
@@ -109,7 +116,8 @@ async function autoDeductJoiningFee(user) {
 
 const joinUser = async (req, res) => {
   try {
-    const { name, email, password, sponsorId, side, aadharNumber, contact } = req.body;
+    const { name, email, password, sponsorId, side, aadharNumber, contact } =
+      req.body;
 
     const parent = await User.findOne({ sponsorId });
     if (!parent) return res.status(400).json({ message: "Sponsor not found" });
@@ -148,22 +156,32 @@ const joinUser = async (req, res) => {
     if (side === "right") parent.rightChild = newUser._id;
     await parent.save();
 
-    await companyController.addJoiningFee(`${newUser.name} (${newUser._id})`, newUser.joiningFee);
+    await companyController.addJoiningFee(
+      `${newUser.name} (${newUser._id})`,
+      newUser.joiningFee
+    );
 
     await checkCycleCompletion(parent._id);
     if (parent.parent) {
       await checkCycleCompletion(parent.parent);
     }
 
-    res.status(201).json({
+    res.json({
+      status: 201,
       success: true,
       message: "User registered successfully.",
       user: newUser,
       plainPin,
     });
+    console.log(newUser);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
   }
 };
 
@@ -178,7 +196,16 @@ const creditWallet = async (req, res) => {
 
     let feeDeducted = await autoDeductJoiningFee(user);
 
+    await walletLog.create({
+      userId: user._id,
+      sponsorId,
+      amount,
+      transactionType: "credit",
+      walletBalance: user.walletBalance,
+    });
+
     res.json({
+      status: 201,
       success: true,
       message: feeDeducted
         ? "Wallet credited and joining fee auto-deducted"
@@ -186,14 +213,55 @@ const creditWallet = async (req, res) => {
       walletBalance: user.walletBalance,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
+  }
+};
+
+const getSingleWalletLog = async (req, res) => {
+  try {
+    const { sponsorId } = req.body;
+
+    if (!sponsorId) {
+      return res.status(400).json({
+        success: false,
+        message: "sponsorId is required",
+      });
+    }
+
+    const log = await walletLog.find({sponsorId});
+
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        message: "Wallet log not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: log,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: err.message,
+    });
   }
 };
 
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).populate("parent", "sponsorId name");
+    const user = await User.findOne({ email }).populate(
+      "parent",
+      "sponsorId name"
+    );
     if (!user) return res.status(400).json({ message: "Invalid email" });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -203,7 +271,8 @@ const login = async (req, res) => {
       expiresIn: process.env.JWT_EXPIRES_IN,
     });
 
-    res.status(200).json({
+    res.json({
+      status: 200,
       success: true,
       message: "Login successful",
       token,
@@ -221,7 +290,12 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
   }
 };
 
@@ -229,10 +303,56 @@ const login = async (req, res) => {
 
 const getAllUser = async (req, res) => {
   try {
-    const users = await User.find().populate("parent").populate("leftChild").populate("rightChild");
-    res.json({ status: 200, success: true, data: users });
+    const users = await User.find()
+      .populate("parent")
+      .populate("leftChild")
+      .populate("rightChild");
+    res.json({
+      status: 200,
+      success: true,
+      message: "all user is get successfully",
+      data: users,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
+  }
+};
+
+const getSingleuser = async (req, res) => {
+  try {
+    const { id } = req.body; 
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
 
@@ -240,17 +360,34 @@ const getAvailableSide = async (req, res) => {
   try {
     const { sponsorId } = req.body;
     const parent = await User.findOne({ sponsorId });
-    if (!parent) return res.json({ success: false, message: "Sponsor not found" });
+    if (!parent)
+      return res.json({
+        status: 401,
+        success: false,
+        message: "Sponsor not found",
+      });
 
     const filled = [];
     if (parent.leftChild) filled.push("left");
     if (parent.rightChild) filled.push("right");
     if (filled.length === 2)
-      return res.json({ success: false, message: "Both sides filled" });
+      return res.json({
+        status: 401,
+        success: false,
+        message: "Both sides filled",
+      });
 
-    res.json({ success: true, available: filled.includes("left") ? "right" : "left" });
+    res.json({
+      success: true,
+      available: filled.includes("left") ? "right" : "left",
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
   }
 };
 
@@ -261,7 +398,11 @@ const addPurchase = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.walletBalance < price) {
-      return res.status(400).json({ success: false, message: "Insufficient wallet balance" });
+      return res.json({
+        status: 400,
+        success: false,
+        message: "Insufficient wallet balance",
+      });
     }
 
     user.walletBalance -= price;
@@ -270,9 +411,18 @@ const addPurchase = async (req, res) => {
 
     await companyController.addProductSale(`${user.name} (${user._id})`, price);
 
-    res.json({ success: true, message: "Product purchased successfully" });
+    res.json({
+      status: 200,
+      success: true,
+      message: "Product purchased successfully",
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status: 500,
+      success: false,
+      message: "internal server error",
+      error: err.message,
+    });
   }
 };
 
@@ -280,7 +430,10 @@ const addPurchase = async (req, res) => {
 
 cron.schedule("*/1 * * * *", async () => {
   try {
-    const users = await User.find({ joiningFeePaid: false, walletBalance: { $gte: JOINING_FEE } });
+    const users = await User.find({
+      joiningFeePaid: false,
+      walletBalance: { $gte: JOINING_FEE },
+    });
     for (let user of users) {
       await autoDeductJoiningFee(user);
       console.log(`Joining fee auto-deducted for ${user.email}`);
@@ -294,7 +447,9 @@ module.exports = {
   joinUser,
   login,
   creditWallet,
+  getSingleWalletLog,
   getAvailableSide,
   getAllUser,
+  getSingleuser,
   addPurchase,
 };

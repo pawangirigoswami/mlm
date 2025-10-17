@@ -44,19 +44,26 @@
 //     type:Boolean,
 //     default:false
 //   }
-  
+
 // });
 
 // module.exports = mongoose.model("User", userSchema);
-
 
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   sponsorId: { type: String, required: true },
   parent: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-  leftChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-  rightChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  leftChild: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  rightChild: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
 
   name: { type: String, required: true },
   userId: { type: String, required: true, unique: true },
@@ -85,7 +92,7 @@ const userSchema = new mongoose.Schema({
   ],
 
   cyclesCompleted: { type: Number, default: 0 },
-   cycleCompletedFlag: { type: Boolean, default: false }, // prevent double commission
+  cycleCompletedFlag: { type: Boolean, default: false }, // prevent double commission
 
   role: { type: String, enum: ["admin", "user"], default: "user" },
 

@@ -8,9 +8,18 @@ const createProduct = async (req, res) => {
     const { name, price, description } = req.body;
     const product = new Product({ name, price, description });
     await product.save();
-    res.status(201).json({ success: true, product });
+    res.json({
+      status:201,
+      success: true, 
+      message:"user is create successfully",
+      product });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status:500,
+      success:false,
+      message:"internal server error",
+      error:err.message
+    })
   }
 };
 
@@ -18,9 +27,19 @@ const createProduct = async (req, res) => {
 const getProducts = async (req, res) => {
   try {
     const products = await Product.find();
-    res.json({ success: true, products });
+    res.json({
+      status:200,
+      success: true,
+      message:"all product get successfully",
+      products 
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({
+      status:500,
+      success:false,
+      message:"internal server error",
+      error:err.message
+    })
   }
 };
 
@@ -32,10 +51,18 @@ const purchaseProduct = async (req, res) => {
     const { sponsorId, productId } = req.body;
 
     const user = await User.findOne({ sponsorId });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.json({
+      status:401,
+      success:false,
+       message: "User not found"
+       });
 
     const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ message: "Product not found" });
+    if (!product) return res.json({ 
+      status:404,
+      success:false,
+      message: "Product not found" 
+    });
 
     // Add to user's purchases
     user.purchases.push({
@@ -49,12 +76,18 @@ const purchaseProduct = async (req, res) => {
     await companyController.addProductSale(`${user.name} (${user._id})`, product.price);
 
     res.json({
+      status:200,
       success: true,
       message: "Product purchased successfully. (No commission applied)",
       purchases: user.purchases,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+   res.json({
+      status:500,
+      success:false,
+      message:"internal server error",
+      error:err.message
+    })
   }
 };
 

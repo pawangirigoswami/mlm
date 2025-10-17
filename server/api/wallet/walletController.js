@@ -13,9 +13,7 @@ const createOrder = async (req, res) => {
     const { amount, userId } = req.body;
 
     if (!amount || !userId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Amount and userId required" });
+      return res.json({ status:400,success: false, message: "Amount and userId required" });
     }
 
     const options = {
@@ -27,6 +25,7 @@ const createOrder = async (req, res) => {
     const order = await razorpay.orders.create(options);
 
     res.json({
+      status:200,
       success: true,
       orderId: order.id,
       amount: order.amount,
@@ -35,7 +34,12 @@ const createOrder = async (req, res) => {
     });
   } catch (error) {
     console.error("Order creation failed", error);
-    res.status(500).json({ success: false, message: "Server error" });
+   res.json({
+      status:500,
+      success:false,
+      message:"internal server error",
+      error:err.message
+    })
   }
 };
 
@@ -50,7 +54,7 @@ const verifyPayment = async (req, res) => {
     } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !userId) {
-      return res.status(400).json({ success: false, message: "Missing payment details" });
+      return res.json({status:401, success: false, message: "Missing payment details" });
     }
 
     // Verify signature
@@ -60,12 +64,12 @@ const verifyPayment = async (req, res) => {
       .digest("hex");
 
     if (generated_signature !== razorpay_signature) {
-      return res.status(400).json({ success: false, message: "Invalid signature" });
+      return res.json({status:401, success: false, message: "Invalid signature" });
     }
 
     // Find wallet
     const wallet = await Wallet.findOne({ user: userId });
-    if (!wallet) return res.status(404).json({ success: false, message: "Wallet not found" });
+    if (!wallet) return res.json({status:401, success: false, message: "Wallet not found" });
 
     // Credit wallet balance
     const paymentAmount = Number(amount);
@@ -79,7 +83,7 @@ const verifyPayment = async (req, res) => {
 
     // Find user
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (!user) return res.json({status:401, success: false, message: "User not found" });
 
     let joiningFeeDeducted = false;
     const joiningFee = Number(process.env.JOINING_FEE) || 2000;
@@ -110,6 +114,7 @@ const verifyPayment = async (req, res) => {
     }
 
     res.json({
+      status:200,
       success: true,
       message: `Wallet updated successfully${joiningFeeDeducted ? ", joining fee deducted" : ""}`,
       walletBalance: wallet.balance,
