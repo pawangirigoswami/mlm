@@ -100,9 +100,21 @@ async function handlePayment(payerId, amount) {
 
 async function autoDeductJoiningFee(user) {
   if (!user.joiningFeePaid && user.walletBalance >= JOINING_FEE) {
+    user.walletBalance -= JOINING_FEE;
+    await user.save();
+
+    await walletLog.create({
+      userId: user._id,
+      sponsorId: user.sponsorId,
+      amount: JOINING_FEE,
+      transactionType: "debit",
+      walletBalance: user.walletBalance,
+    });
+
     await handlePayment(user._id, JOINING_FEE);
     user.joiningFeePaid = true;
     await user.save();
+
     await companyController.addJoiningFee(
       `${user.name} (${user._id})`,
       JOINING_FEE
@@ -233,18 +245,19 @@ const getSingleWalletLog = async (req, res) => {
       });
     }
 
-    const log = await walletLog.find({sponsorId});
+    const logs = await walletLog.find({ sponsorId });
 
-    if (!log) {
+    if (!logs || logs.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Wallet log not found",
+        message: "No wallet logs found for this sponsor",
       });
     }
 
     res.json({
       success: true,
-      data: log,
+      count: logs.length,
+      data: logs,
     });
   } catch (err) {
     res.status(500).json({
@@ -325,7 +338,7 @@ const getAllUser = async (req, res) => {
 
 const getSingleuser = async (req, res) => {
   try {
-    const { id } = req.body; 
+    const { id } = req.body;
 
     if (!id) {
       return res.status(400).json({
